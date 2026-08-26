@@ -28,6 +28,26 @@ coverage
 
 .eslintcache
 
+# Deployment artifacts and local AWS runtime material
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+*.env
+.env
+.env.*
+!.env.example
+.fordeploy/aws-backup/*
+!.fordeploy/aws-backup/.gitkeep
+!.fordeploy/aws-backup/README.md
+!.fordeploy/aws-backup/*.example
+!.fordeploy/aws-backup/*.example.*
+
 # Cypress
 /cypress/videos/
 /cypress/screenshots/

@@ -34,6 +34,17 @@ Vue 3
 실제 동영상 플레이어 대신
 `Video Playback Simulator`를 만들어 재생 시간과 진도 이벤트를 발생시킨다.
 
+다만 이 앱이 나중에 실제 동영상 파일을 다루게 될 경우의 목표 구조는
+미리 분명히 해 둔다.
+
+- 동영상 파일 또는 동영상 접근 정보는 backend가 관리한다.
+- 사용자는 Vue에서 강의를 선택하고, Spring Boot가 제공하는 lecture video endpoint를 통해 동영상을 제공받는다.
+- 시청 중 발생하는 progress event는 먼저 Redis에 저장한다.
+- Redis에 쌓인 progress는 적당한 시점에 MySQL progress table로 옮겨 영속화한다.
+
+현재 구현 단계에서는 실제 동영상 파일 제공 대신 simulator를 사용하되,
+진도 처리 구조는 실제 동영상 플레이어로 바꿔도 유지될 수 있게 설계한다.
+
 ---
 
 # 1. 가장 중요한 개발 원칙
@@ -180,6 +191,12 @@ Compose 내부 통신에서는 service name을 사용한다.
 개발 편의를 위해 frontend와 backend source directory는 bind mount할 수 있다.
 단, node_modules나 Gradle cache처럼 container 내부에서 관리해야 하는 디렉터리는 별도 volume을 사용한다.
 
+실제 동영상 제공 단계로 확장할 때도 browser가 동영상 저장소에 직접 접근하는 구조를 기본값으로 삼지 않는다.
+Vue는 Spring Boot의 lecture video API를 호출하고,
+Spring Boot가 파일 경로, 접근 권한, range request, content type 같은 제공 책임을 갖는다.
+이 프로젝트의 1차 목표에서는 이 책임을 문서화만 하고,
+실제 video streaming server나 별도 media service는 만들지 않는다.
+
 ---
 
 # 4. Domain Model
@@ -219,7 +236,17 @@ Compose 내부 통신에서는 service name을 사용한다.
 - durationSeconds
 - sequence
 
-실제 video file은 저장하지 않는다.
+1차 구현에서는 실제 video file을 저장하지 않는다.
+
+실제 동영상 제공 단계로 확장할 경우 Lecture에는 다음과 같은 backend 관리용 필드를 추가할 수 있다.
+
+- videoStorageKey
+- videoContentType
+- videoByteSize
+- videoDurationSeconds
+
+이 필드는 frontend가 임의로 조합하는 값이 아니라
+backend가 저장 위치와 제공 정책을 해석하기 위한 값이다.
 
 ---
 
@@ -380,6 +407,15 @@ GET /api/courses/{courseId}/lectures
 
 GET /api/lectures/{lectureId}
 
+실제 동영상 제공 단계에서 추가할 수 있는 API:
+
+GET /api/lectures/{lectureId}/video
+
+이 API는 backend가 관리하는 동영상 파일을 사용자에게 제공한다.
+초기에는 simulator를 사용하므로 이 endpoint를 구현하지 않는다.
+나중에 구현할 때는 HTTP range request, content type, 접근 권한,
+파일 경로 노출 방지를 함께 고려한다.
+
 ---
 
 ## Progress
@@ -490,6 +526,19 @@ Reset:
 
 0으로 초기화
 
+이 simulator는 최종 목표가 아니다.
+역할은 실제 동영상 플레이어 없이도 다음 흐름을 먼저 검증하는 것이다.
+
+Vue lecture screen
+→ 재생 시간 변화
+→ progress event
+→ Spring Boot
+→ Redis progress buffer
+→ MySQL persistence
+
+실제 backend 저장 동영상을 제공하는 단계에서는 simulator를 HTML video element로 교체할 수 있다.
+이때도 progress event API와 Redis/MySQL 저장 전략은 그대로 유지한다.
+
 ---
 
 # 11. Progress Event
@@ -574,6 +623,20 @@ Spring
 MySQL
 
 MySQL 저장 성공 후 필요한 Redis state를 정리한다.
+
+Flush 시점은 처음부터 정교하게 만들지 않는다.
+
+기본 판단:
+
+1. 정기 flush: 30초마다 Redis progress를 MySQL에 upsert한다.
+2. 종료성 flush: completed = true가 되는 progress는 가능한 한 빨리 MySQL에 반영한다.
+3. 보수적 조회: progress 조회 시 Redis 값이 있으면 MySQL 값보다 Redis 값을 우선 표시한다.
+
+이렇게 하면 사용자는 최신 진도를 빠르게 볼 수 있고,
+MySQL은 최종 영속 저장소 역할을 유지한다.
+
+Redis는 임시 저장소이므로 Redis 값만 믿고 장기 상태를 판단하지 않는다.
+최종 수강 이력, 완료 여부, 장애 복구 후 기준 데이터는 MySQL의 progress table을 기준으로 한다.
 
 ---
 
@@ -838,6 +901,12 @@ production credential pattern으로 오해되지 않도록 README에 명시한�
 
 backend는 MySQL과 Redis가 완전히 준비되기 전에 먼저 뜰 수 있으므로,
 초기 연결 실패를 고려해 Spring Boot datasource retry 또는 Compose healthcheck를 단순하게 구성한다.
+
+AWS demo 배포 스크립트는 이 단계에서 만들지 않는다.
+
+이 단계의 Docker 작업은 local development runtime을 안정화하는 것이 목적이다.
+원격 배포 파일은 Spring Boot, Vue static serving, MySQL, Redis runtime 구성이
+실제로 동작한 뒤 작성한다.
 
 ---
 
@@ -1104,6 +1173,35 @@ MySQL 장애:
 2. Redis에는 progress가 들어오는지 확인
 3. MySQL 복구
 4. flush 가능한지 확인
+
+---
+
+## Phase 11 — Backend Stored Video Extension
+
+이 단계는 1차 LMS 흐름의 필수 구현 범위가 아니다.
+
+실제 backend 저장 동영상을 사용자에게 제공하는 기능은
+다음 조건을 먼저 만족한 뒤 진행한다.
+
+1. Course, Lecture, Enrollment, Progress 기본 API가 동작한다.
+2. Video simulator 기반 progress event가 Redis에 저장된다.
+3. Redis progress가 MySQL로 flush된다.
+4. 장애 실험을 통해 Redis와 MySQL의 역할 차이를 확인했다.
+
+그 다음에 다음 항목을 작은 확장 단계로 구현한다.
+
+1. backend가 관리하는 동영상 파일 저장 위치 결정
+2. Lecture video metadata 추가
+3. GET /api/lectures/{lectureId}/video 구현
+4. HTTP range request 지원 여부 판단
+5. Vue simulator를 실제 video element로 교체
+6. video timeupdate 이벤트를 기존 progress API에 연결
+
+판단:
+
+Turn 1부터 Turn 14까지는 실제 동영상 파일 제공을 넣지 않는다.
+실제 동영상 제공은 Turn 15 이후의 확장 작업으로 둔다.
+이 순서를 지키면 video serving 문제와 progress persistence 문제를 분리해서 확인할 수 있다.
 
 ---
 
@@ -1381,15 +1479,150 @@ docker compose up부터 Vue 화면 동작까지 전체 흐름을 한 번 통과�
 
 ---
 
+## Turn 15 — Backend Stored Video 제공 확장
+
+이 턴은 기본 LMS 실습 완료 후 진행하는 선택 확장이다.
+
+구현 항목:
+
+1. backend 내부 또는 runtime volume에 동영상 파일을 둘 위치를 정한다.
+2. Lecture에 video metadata를 추가한다.
+3. GET /api/lectures/{lectureId}/video endpoint를 만든다.
+4. 필요한 경우 HTTP range request를 지원한다.
+5. Vue의 VideoPlaybackSimulator를 실제 video element 기반 컴포넌트로 교체한다.
+6. video playback event를 기존 PUT /api/lectures/{lectureId}/progress API에 연결한다.
+
+완료 기준:
+
+사용자가 Vue 강의 화면에서 backend가 제공하는 동영상을 재생할 수 있고,
+시청 진도가 Redis에 먼저 저장된 뒤 scheduled flush 또는 완료 시점에 MySQL로 반영된다.
+
+주의:
+
+이 단계에서도 별도 video streaming server는 만들지 않는다.
+Spring Boot가 학습용 demo 수준의 파일 제공 책임만 맡는다.
+
+---
+
 Turn 1부터 Turn 6까지는 Redis 없는 기본 LMS 흐름을 먼저 완성한다.
 
 그 다음 Turn 7부터 Redis를 붙인다.
 
 이 순서를 따르면 문제가 생겼을 때 API/DB 문제인지 Redis 문제인지 분리해서 확인하기 쉽다.
 
+실제 backend 저장 동영상 제공은 Turn 15 이후에 붙인다.
+
+즉, 현재 단계 판단은 다음과 같다.
+
+1. 먼저 simulator로 progress pipeline을 완성한다.
+2. Redis가 progress의 1차 저장소 역할을 하는지 확인한다.
+3. MySQL flush가 안정적으로 동작하는지 확인한다.
+4. 그 뒤 simulator를 실제 backend video 제공 방식으로 교체한다.
+
 ---
 
-# 27. README
+# 27. Manual AWS Deployment Preparation
+
+AWS 배포는 항상 수동으로만 수행한다.
+
+이 프로젝트에서는 원격 배포 파일을 초반에 만들지 않는다.
+
+초반에 배포 파일을 먼저 만들면 아직 확정되지 않은 구조를 기준으로
+임시 Dockerfile, 임시 reverse proxy, 임시 port 정책이 생기기 쉽다.
+따라서 `.fordeploy/`의 실제 shell script는 Spring Boot 기반 runtime이
+확정된 뒤 작성한다.
+
+## 27.1 기본 원칙
+
+- AWS 배포는 CI/CD나 자동 배포가 아니라 수동 shell script로만 수행한다.
+- AWS ALB가 외부 HTTPS, host routing, health check, load balancing을 담당한다.
+- 기본 AWS demo 배포 전략에서는 Nginx를 별도 application layer로 두지 않는다.
+- Spring Boot가 production-like application server 역할을 한다.
+- Spring Boot는 `/api/*`와 Vue build 정적 파일을 함께 제공한다.
+- MySQL과 Redis는 application container와 lifecycle을 분리한다.
+- application redeploy는 DB/Redis volume을 삭제하거나 재생성하지 않는다.
+
+## 27.2 .fordeploy 작성 시점
+
+`.fordeploy/` 아래의 실제 배포 shell script는 Turn 14 직전 또는
+Turn 14 이후에 작성한다.
+
+권장 위치:
+
+Turn 14 — README와 마무리 검증
+
+또는 별도 후속 단계:
+
+Turn 14.5 — Manual AWS Demo Deployment Preparation
+
+작성 대상 예:
+
+1. .fordeploy/README.md
+2. .fordeploy/deploy-aws-demo.sh
+3. .fordeploy/configure-aws-demo-alb.sh
+4. 필요한 경우 .fordeploy/bootstrap-aws-demo-runtime.sh
+
+이 파일들은 다음이 확정된 뒤 작성한다.
+
+1. Spring Boot Dockerfile
+2. Vue dist를 Spring Boot image에 포함하는 방식
+3. `/api/health` endpoint
+4. Spring profile
+5. MySQL connection environment
+6. Redis connection environment
+7. application container port
+8. MySQL/Redis container 또는 외부 runtime 전략
+9. seed/migration 방식
+10. persistent volume 이름
+
+## 27.3 .fordeploy/aws-backup 작성 시점
+
+`.fordeploy/aws-backup/` 폴더는 미리 만들어둘 수 있다.
+
+하지만 그 안에 실제 환경변수 파일과 runtime file 템플릿은
+Turn 12 이후에 작성한다.
+
+권장 위치:
+
+Turn 12 — Redis to MySQL Flush 완료 후
+
+또는:
+
+Turn 13 — Failure Experiment 진행 중
+
+작성 대상 예:
+
+1. .fordeploy/aws-backup/.env.example
+2. .fordeploy/aws-backup/env-file.example
+3. .fordeploy/aws-backup/runtime-layout.md
+
+실제 secret 값은 repository에 commit하지 않는다.
+
+로컬 DB dump나 로컬 DB 파일을 AWS로 전송하는 전략은 사용하지 않는다.
+AWS database state는 migration, seed data, 또는 AWS host 내부의
+database administration 절차로 관리한다.
+
+## 27.4 최종 AWS demo 형태
+
+최종적으로 목표하는 AWS demo runtime은 다음과 같다.
+
+ALB
+   │
+   ▼
+Spring Boot app container
+   ├── /api/*
+   └── Vue static files
+   │
+   ├── MySQL
+   └── Redis
+
+개발환경에서는 Vue dev server와 Spring Boot를 분리해 빠르게 개발하고,
+production-like AWS demo에서는 Spring Boot app container가
+API와 frontend 정적 파일을 함께 제공한다.
+
+---
+
+# 28. README
 
 README에는 단순 설치법뿐 아니라 다음을 기록한다.
 
@@ -1417,13 +1650,28 @@ Vue
 목표는 streaming 기술이 아니라
 학습 진도 데이터의 frontend/backend 처리 흐름을 이해하는 것이기 때문.
 
+## Future Backend Stored Video
+
+기본 구현이 끝난 뒤에는 backend가 저장한 동영상을
+GET /api/lectures/{lectureId}/video 형태로 제공하는 확장을 고려한다.
+
+이때도 진도 저장 전략은 유지한다.
+
+Vue video element
+→ Progress API
+→ Redis progress buffer
+→ MySQL progress table
+
+Redis는 빠르게 바뀌는 시청 위치의 1차 저장소이고,
+MySQL은 최종 수강 이력과 완료 여부의 영속 저장소이다.
+
 ## Failure Observations
 
 Redis/MySQL/Spring을 실제로 중지시켜 본 결과 기록.
 
 ---
 
-# 28. Definition of Done
+# 29. Definition of Done
 
 프로젝트는 다음이 가능하면 완료다.
 
@@ -1438,3 +1686,5 @@ Redis/MySQL/Spring을 실제로 중지시켜 본 결과 기록.
 9. Course 조회 cache의 HIT/MISS를 로그로 확인할 수 있다.
 10. Docker Compose로 frontend, backend, MySQL, Redis를 함께 실행할 수 있다.
 11. 주요 장애 실험 결과가 README에 기록되어 있다.
+12. Spring Boot 기반 AWS demo 수동 배포 전략이 문서화되어 있다.
+13. 실제 backend 저장 동영상 제공은 기본 완료 이후 확장 단계로 판단되어 문서화되어 있다.
