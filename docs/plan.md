@@ -1240,6 +1240,7 @@ repository root의 `.env.example`에는 최소한 다음 변수 이름을 명시
 ```dotenv
 SPRING_PROFILES_ACTIVE=aws-demo
 SERVER_PORT=8080
+APP_SEARCH_INDEXING_ENABLED=false
 
 SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/vueshines
 SPRING_DATASOURCE_USERNAME=vueshines
@@ -1608,7 +1609,7 @@ AWS demo Docker image는 현재 작업 repository에서 직접 build하지 않�
 build root:   /home/hchjeong/deploy-remote-repo
 build source: /home/hchjeong/deploy-remote-repo/vueshines
 image root:   /home/hchjeong/deploy-remote-repo/images/vueshines
-remote:       git@github.com:HCHJEONG/vueshines.git
+remote:       https://github.com/HCHJEONG/vueshines.git
 ```
 
 배포할 때마다 기존 `/home/hchjeong/deploy-remote-repo/vueshines`를 재사용하지 않고
@@ -1629,7 +1630,7 @@ remote:       git@github.com:HCHJEONG/vueshines.git
 
 fresh clone 후에는 다음을 확인한다.
 
-1. origin URL이 `git@github.com:HCHJEONG/vueshines.git`이다.
+1. origin URL이 `https://github.com/HCHJEONG/vueshines.git`이다.
 2. operator가 선택한 remote branch 또는 commit을 checkout한다.
 3. `git status --porcelain` 결과가 비어 있다.
 4. build에 사용할 commit SHA를 log와 image tag에 기록한다.
@@ -1642,6 +1643,10 @@ Docker build context는 이 clean clone만 사용한다.
 
 image tar는 clean clone 내부가 아니라 image root 아래에 임시로 생성하고,
 AWS에서 image load가 성공하면 local과 remote tar를 삭제한다.
+
+AWS demo host에서는 다른 application이 `8080`을 사용하고 있으므로
+Vueshines application은 host `8180`을 container `8080`에 연결한다.
+ALB target group health check는 host port `8180`의 `/api/health`를 사용한다.
 
 ## 27.3 .fordeploy 작성 시점
 
