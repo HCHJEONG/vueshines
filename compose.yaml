@@ -20,7 +20,7 @@ services:
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/vueshines
       SPRING_DATASOURCE_USERNAME: vueshines
-      SPRING_DATASOURCE_PASSWORD: vueshines
+      SPRING_DATASOURCE_PASSWORD: ${DB_APP_PASSWORD:-vueshines}
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
     depends_on:
@@ -42,12 +42,12 @@ services:
     environment:
       MYSQL_DATABASE: vueshines
       MYSQL_USER: vueshines
-      MYSQL_PASSWORD: vueshines
-      MYSQL_ROOT_PASSWORD: root
+      MYSQL_PASSWORD: ${DB_APP_PASSWORD:-vueshines}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-root}
     volumes:
       - mysql-data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p\"$${MYSQL_ROOT_PASSWORD}\""]
       interval: 5s
       timeout: 5s
       retries: 20

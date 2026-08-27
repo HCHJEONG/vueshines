@@ -981,7 +981,7 @@ services:
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/vueshines
       SPRING_DATASOURCE_USERNAME: vueshines
-      SPRING_DATASOURCE_PASSWORD: vueshines
+      SPRING_DATASOURCE_PASSWORD: ${DB_APP_PASSWORD:-vueshines}
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
     depends_on:
@@ -995,8 +995,8 @@ services:
     environment:
       MYSQL_DATABASE: vueshines
       MYSQL_USER: vueshines
-      MYSQL_PASSWORD: vueshines
-      MYSQL_ROOT_PASSWORD: root
+      MYSQL_PASSWORD: ${DB_APP_PASSWORD:-vueshines}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-root}
     volumes:
       - mysql-data:/var/lib/mysql
 
@@ -1212,9 +1212,9 @@ AWS demo에서는 Vue production build 결과를 Spring Boot static resource에 
 6. `/api/health`와 Actuator healthcheck
 7. repository root의 `.env.example`에 AWS runtime 환경변수 이름과 non-secret 예시 기재
 8. operator가 `.fordeploy/aws-backup/.env`를 완전 수동으로 준비
-9. `.fordeploy/`의 최소 수동 AWS demo 배포 script와 runbook
+9. `.fordeploy/`의 AWS demo용 Docker Compose, 최소 수동 배포 script와 runbook
 10. `/home/hchjeong/deploy-remote-repo/vueshines`를 완전 삭제한 뒤 fresh clone하는 clean build source 준비
-11. 배포 script 안에서 `.env` 확인, 전송, 권한 설정을 수행하는 절차
+11. 배포 script 안에서 `.env` 확인과 전송을 수행하고 AWS copy에만 권한을 설정하는 절차
 12. application redeploy 시 MySQL과 Redis volume을 건드리지 않는 교체 절차
 13. ALB HTTPS 경로에서 frontend와 health endpoint 확인
 14. 초기 demo 검색 노출 방지 설정
@@ -1231,9 +1231,18 @@ AWS demo에서는 Vue production build 결과를 Spring Boot static resource에 
 8. target에 기존 `.env`가 있어도 operator가 명시적으로 승인하지 않으면 덮어쓰지 않는다.
 9. target runtime directory는 기본 owner `ubuntu:ubuntu`, mode `700`으로 준비한다.
 10. 전송 후 `.env`의 기본 owner를 `ubuntu:ubuntu`, file mode를 `600`으로 설정한다.
-11. owner와 group은 배포 script 변수로 변경할 수 있게 하되 기본값과 실제 적용값을 log에 출력한다.
-12. env file의 전송과 권한 설정이 성공한 뒤에만 application container 교체를 진행한다.
-13. script와 log는 env file의 내용이나 secret 값을 출력하지 않는다.
+11. local `.env`의 owner나 mode는 배포 script가 검사하거나 변경하지 않는다.
+12. owner와 group은 배포 script 변수로 변경할 수 있게 하되 기본값과 실제 적용값을 log에 출력한다.
+13. env file의 전송과 권한 설정이 성공한 뒤에만 Docker Compose application 교체를 진행한다.
+14. script와 log는 env file의 내용이나 secret 값을 출력하지 않는다.
+
+AWS runtime 원칙:
+
+1. `.fordeploy/compose.aws-demo.yaml`을 source of truth로 사용한다.
+2. 배포 실행과 각 `y/N` 승인은 항상 operator가 수동으로 수행한다.
+3. script는 image build, transfer, load와 `docker compose up` 절차를 자동화한다.
+4. MySQL과 Redis는 명시적으로 이름 붙인 volume을 사용한다.
+5. 일반 application 재배포에서는 volume 삭제 명령을 실행하지 않는다.
 
 repository root의 `.env.example`에는 최소한 다음 변수 이름을 명시한다.
 
@@ -1241,19 +1250,22 @@ repository root의 `.env.example`에는 최소한 다음 변수 이름을 명시
 SPRING_PROFILES_ACTIVE=aws-demo
 SERVER_PORT=8080
 APP_SEARCH_INDEXING_ENABLED=false
+DB_APP_PASSWORD=replace-with-secret
+DB_ROOT_PASSWORD=replace-with-different-secret
 
 SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/vueshines
 SPRING_DATASOURCE_USERNAME=vueshines
-SPRING_DATASOURCE_PASSWORD=replace-with-secret
 
 SPRING_DATA_REDIS_HOST=redis
 SPRING_DATA_REDIS_PORT=6379
 
 MYSQL_DATABASE=vueshines
 MYSQL_USER=vueshines
-MYSQL_PASSWORD=replace-with-secret
-MYSQL_ROOT_PASSWORD=replace-with-secret
 ```
+
+`DB_APP_PASSWORD`는 MySQL container의 `MYSQL_PASSWORD`와
+Spring Boot container의 `SPRING_DATASOURCE_PASSWORD`에 각각 mapping한다.
+`DB_ROOT_PASSWORD`는 MySQL container의 `MYSQL_ROOT_PASSWORD`에만 mapping한다.
 
 Turn 3 구현 시 실제 Compose와 Spring Boot가 사용하는 변수만 남기고,
 변수 이름이 바뀌면 application 설정, `.env.example`, 배포 runbook을 같은 Turn에서 함께 갱신한다.

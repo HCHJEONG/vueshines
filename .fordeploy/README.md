@@ -2,8 +2,8 @@
 
 The AWS demo deployment is deliberately manual. It builds a production-like
 Spring Boot image containing the Vue production build, transfers the image
-through the configured `aws-demo` SSH alias, and replaces only the application
-container.
+through the configured `aws-demo` SSH alias, and applies the AWS runtime with
+Docker Compose.
 
 ## Required Local File
 
@@ -14,9 +14,10 @@ Create this file manually before deployment:
 ```
 
 Use the repository root `.env.example` as the variable contract. The deploy
-script never creates the real file and never prints its contents. If the file
-is absent or a required value is empty, deployment stops before cloning or
-building.
+script never creates the real file, changes its local permissions, or prints
+its contents. If the file is absent or a required value is empty, deployment
+stops before cloning or building. File ownership and mode are applied only to
+the transferred AWS copy.
 
 ## Build Source
 
@@ -42,6 +43,7 @@ Defaults:
 AWS SSH alias:       aws-demo
 Remote app root:     /home/ubuntu/vueshines
 Remote env file:     /home/ubuntu/vueshines/.env
+Remote Compose file: /home/ubuntu/vueshines/compose.aws-demo.yaml
 Remote image root:   /home/ubuntu/docker_images/vueshines
 Application port:    8180 -> container 8080
 Application URL:     https://vueshines.penvot.com
@@ -51,8 +53,9 @@ The script asks before transferring the env file and before deleting the clean
 clone. The remote env file is installed as `ubuntu:ubuntu` with mode `600`.
 The runtime directory uses mode `700`.
 
-The MySQL and Redis containers and their named volumes are created only when
-missing. Normal application deployment never removes or recreates them.
+The script runs the committed `.fordeploy/compose.aws-demo.yaml` on AWS. MySQL
+and Redis use explicitly named volumes, and a normal application redeploy runs
+`docker compose up` without removing either volume.
 
 ## ALB And DNS
 
