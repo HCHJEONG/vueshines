@@ -57,6 +57,11 @@ The script runs the committed `.fordeploy/compose.aws-demo.yaml` on AWS. MySQL
 and Redis use explicitly named volumes, and a normal application redeploy runs
 `docker compose up` without removing either volume.
 
+On success, the script prints `DEPLOYMENT SUCCEEDED` with the commit, image,
+target, and port. On failure, it prints the failed step and exit code. A remote
+Compose failure also prints `compose ps -a` and the latest 150 log lines from
+the application, MySQL, and Redis services without printing the env file.
+
 ## ALB And DNS
 
 After the application responds on the AWS host, configure the existing ALB,
