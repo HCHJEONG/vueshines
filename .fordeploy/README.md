@@ -61,6 +61,8 @@ On success, the script prints `DEPLOYMENT SUCCEEDED` with the commit, image,
 target, and port. On failure, it prints the failed step and exit code. A remote
 Compose failure also prints `compose ps -a` and the latest 150 log lines from
 the application, MySQL, and Redis services without printing the env file.
+The application healthcheck allows a 180-second startup period because the
+first Spring Boot start on the demo host can take over two minutes.
 
 ## ALB And DNS
 
