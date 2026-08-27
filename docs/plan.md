@@ -1193,7 +1193,96 @@ docker compose up으로 frontend / backend / MySQL / Redis 네 container가 함�
 
 ---
 
-## Turn 3 — DB 모델과 Seed Data
+## Turn 3 — Early AWS Demo Deployable Runtime
+
+기본 LMS 기능이 모두 완성될 때까지 AWS demo 배포를 미루지 않는다.
+이 턴에서 production-like 통합 image와 최소 수동 배포 경로를 먼저 만든다.
+
+로컬 개발에서는 frontend와 backend container를 분리해 Vite 개발 서버를 계속 사용한다.
+AWS demo에서는 Vue production build 결과를 Spring Boot static resource에 포함한
+단일 application image를 사용한다.
+
+구현 항목:
+
+1. Vue production build
+2. Vue dist를 Spring Boot static resource에 포함하는 build 단계
+3. `/api/*`는 Spring MVC가 처리하고 나머지 frontend route는 Vue가 처리하는 구조
+4. Vue Router history mode의 직접 접근과 새로고침 fallback
+5. AWS demo용 production-like Spring Boot application image
+6. `/api/health`와 Actuator healthcheck
+7. repository root의 `.env.example`에 AWS runtime 환경변수 이름과 non-secret 예시 기재
+8. operator가 `.fordeploy/aws-backup/.env`를 완전 수동으로 준비
+9. `.fordeploy/`의 최소 수동 AWS demo 배포 script와 runbook
+10. `/home/hchjeong/deploy-remote-repo/vueshines`를 완전 삭제한 뒤 fresh clone하는 clean build source 준비
+11. 배포 script 안에서 `.env` 확인, 전송, 권한 설정을 수행하는 절차
+12. application redeploy 시 MySQL과 Redis volume을 건드리지 않는 교체 절차
+13. ALB HTTPS 경로에서 frontend와 health endpoint 확인
+14. 초기 demo 검색 노출 방지 설정
+
+환경변수 준비 원칙:
+
+1. repository root에 변수 이름과 non-secret 예시만 담은 `.env.example`을 둔다.
+2. 실제 사용할 local file 이름은 `.fordeploy/aws-backup/.env`로 고정한다.
+3. `.fordeploy/aws-backup/.env`는 operator가 완전 수동으로 만들며 Git에 commit하지 않는다.
+4. 배포 script는 repository root와 caller의 현재 directory에 의존하지 않고 `.env`의 local absolute path를 계산한다.
+5. `.fordeploy/aws-backup/.env`가 없으면 image build나 AWS file transfer를 시작하기 전에 배포 전체를 실패 처리하고 중단한다.
+6. env file은 Docker image에 `COPY`하지 않고 target host의 `/home/ubuntu/vueshines/.env`에 둔다.
+7. env file 전송 전 local absolute path, destination host, destination absolute path를 출력하고 `y/N` 확인을 받는다.
+8. target에 기존 `.env`가 있어도 operator가 명시적으로 승인하지 않으면 덮어쓰지 않는다.
+9. target runtime directory는 기본 owner `ubuntu:ubuntu`, mode `700`으로 준비한다.
+10. 전송 후 `.env`의 기본 owner를 `ubuntu:ubuntu`, file mode를 `600`으로 설정한다.
+11. owner와 group은 배포 script 변수로 변경할 수 있게 하되 기본값과 실제 적용값을 log에 출력한다.
+12. env file의 전송과 권한 설정이 성공한 뒤에만 application container 교체를 진행한다.
+13. script와 log는 env file의 내용이나 secret 값을 출력하지 않는다.
+
+repository root의 `.env.example`에는 최소한 다음 변수 이름을 명시한다.
+
+```dotenv
+SPRING_PROFILES_ACTIVE=aws-demo
+SERVER_PORT=8080
+
+SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/vueshines
+SPRING_DATASOURCE_USERNAME=vueshines
+SPRING_DATASOURCE_PASSWORD=replace-with-secret
+
+SPRING_DATA_REDIS_HOST=redis
+SPRING_DATA_REDIS_PORT=6379
+
+MYSQL_DATABASE=vueshines
+MYSQL_USER=vueshines
+MYSQL_PASSWORD=replace-with-secret
+MYSQL_ROOT_PASSWORD=replace-with-secret
+```
+
+Turn 3 구현 시 실제 Compose와 Spring Boot가 사용하는 변수만 남기고,
+변수 이름이 바뀌면 application 설정, `.env.example`, 배포 runbook을 같은 Turn에서 함께 갱신한다.
+
+초기 demo 검색 노출 방지 설정은 다음을 함께 적용한다.
+
+1. `robots.txt`의 `User-agent: *`, `Disallow: /`
+2. HTML의 `robots` meta tag에 `noindex, nofollow, noarchive`
+3. 가능하면 HTTP `X-Robots-Tag: noindex, nofollow, noarchive` response header
+
+`robots.txt`는 접근 제어 수단이 아니다.
+secret 보호나 사용자 인증을 대신하지 않으며,
+검색 engine에 현재 demo를 index하지 말아 달라는 의사를 전달하는 용도로만 사용한다.
+
+완료 기준:
+
+1. AWS ALB HTTPS 주소에서 Vue 화면이 열린다.
+2. AWS demo의 `/api/health`가 `{ "status": "ok" }`를 반환한다.
+3. frontend route를 직접 입력하거나 새로고침해도 404가 발생하지 않는다.
+4. application image 교체가 MySQL과 Redis data volume을 재생성하지 않는다.
+5. `.fordeploy/`, env file, credential, image tar가 application image에 포함되지 않는다.
+6. 초기 demo 응답에 검색 노출 방지 정책이 반영된다.
+7. 필요한 환경변수와 target host의 env file 위치가 runbook에 기록된다.
+8. 새 AWS host에서 `.fordeploy/aws-backup/.env` 전송과 권한 설정 후 application container를 실행할 수 있다.
+9. local `.env`가 없거나 전송·권한 설정이 실패하면 application container를 교체하지 않는다.
+10. Docker image가 고정 clean clone의 선택한 remote commit에서 만들어졌음을 commit SHA로 확인할 수 있다.
+
+---
+
+## Turn 4 — DB 모델과 Seed Data
 
 구현 항목:
 
@@ -1211,7 +1300,7 @@ Spring Boot 부팅 시 MySQL에 기본 사용자, 강좌, 강의 데이터가 �
 
 ---
 
-## Turn 4 — Course API
+## Turn 5 — Course API
 
 구현 항목:
 
@@ -1227,7 +1316,7 @@ curl 또는 browser에서 강좌 JSON을 확인할 수 있다.
 
 ---
 
-## Turn 5 — Vue Course 목록 화면
+## Turn 6 — Vue Course 목록 화면
 
 기존 Vue 앱을 LMS 화면 구조로 정리한다.
 
@@ -1251,7 +1340,7 @@ Browser
 
 ---
 
-## Turn 6 — Course 상세와 Lecture 목록
+## Turn 7 — Course 상세와 Lecture 목록
 
 구현 항목:
 
@@ -1271,7 +1360,7 @@ Route:
 
 ---
 
-## Turn 7 — Redis Course Cache
+## Turn 8 — Redis Course Cache
 
 Course 조회에 Redis cache를 추가한다.
 
@@ -1289,7 +1378,7 @@ CACHE HIT
 
 ---
 
-## Turn 8 — Enrollment
+## Turn 9 — Enrollment
 
 구현 항목:
 
@@ -1311,7 +1400,7 @@ Vue에서 수강신청 클릭
 
 ---
 
-## Turn 9 — Video Playback Simulator
+## Turn 10 — Video Playback Simulator
 
 Vue에 VideoPlaybackSimulator.vue를 만든다.
 
@@ -1331,7 +1420,7 @@ Vue에 VideoPlaybackSimulator.vue를 만든다.
 
 ---
 
-## Turn 10 — Progress API + Redis Buffer
+## Turn 11 — Progress API + Redis Buffer
 
 구현 항목:
 
@@ -1349,7 +1438,7 @@ Redis에 progress key가 생성된다.
 
 ---
 
-## Turn 11 — Progress 조회와 완료 판정
+## Turn 12 — Progress 조회와 완료 판정
 
 구현 항목:
 
@@ -1367,7 +1456,7 @@ Vue가 완료 여부를 표시한다.
 
 ---
 
-## Turn 12 — Redis to MySQL Flush
+## Turn 13 — Redis to MySQL Flush
 
 Spring @Scheduled job으로 Redis progress를 주기적으로 MySQL에 upsert한다.
 
@@ -1381,7 +1470,7 @@ Redis에 있던 진도가 일정 시간 후 MySQL progress table에 반영된다
 
 ---
 
-## Turn 13 — Failure Experiment
+## Turn 14 — Failure Experiment
 
 Redis, Spring Boot, MySQL을 일부러 멈춰보며 결과를 README에 기록한다.
 
@@ -1398,7 +1487,7 @@ Redis, Spring Boot, MySQL을 일부러 멈춰보며 결과를 README에 기록�
 
 ---
 
-## Turn 14 — README와 마무리 검증
+## Turn 15 — README와 마무리 검증
 
 README에 다음을 정리한다.
 
@@ -1416,7 +1505,7 @@ docker compose up부터 Vue 화면 동작까지 전체 흐름을 한 번 통과�
 
 ---
 
-## Turn 15 — Backend Stored Video 제공 확장
+## Turn 16 — Backend Stored Video 제공 확장
 
 이 턴은 기본 LMS 실습 완료 후 진행하는 선택 확장이다.
 
@@ -1441,13 +1530,43 @@ Spring Boot가 학습용 demo 수준의 파일 제공 책임만 맡는다.
 
 ---
 
-Turn 1부터 Turn 6까지는 Redis 없는 기본 LMS 흐름을 먼저 완성한다.
+## Turn 17 — SEO와 공개 정책 재검토
 
-그 다음 Turn 7부터 Redis를 붙인다.
+AWS demo를 계속 비공개 학습용으로 둘지,
+외부에 공개하고 검색 engine의 index를 허용할지 결정한다.
+
+비공개 또는 미완성 demo이면 Turn 3의 검색 노출 방지 설정을 유지한다.
+공개할 필요가 생긴 경우에는 다음 항목을 함께 검토하고 필요한 설정을 수정한다.
+
+1. `robots.txt`의 `Disallow: /` 유지 또는 제거
+2. HTML `robots` meta tag의 `noindex`, `nofollow`, `noarchive` 유지 또는 제거
+3. HTTP `X-Robots-Tag` header 유지 또는 제거
+4. canonical URL
+5. page title과 description
+6. Open Graph metadata
+7. sitemap 필요 여부
+8. Vue Router 각 화면의 metadata 처리 방식
+9. ALB 또는 Spring Boot에서 내려가는 cache와 robot 관련 header
+
+검색 노출을 허용할 때는 `robots.txt`만 수정하고
+HTML meta tag나 `X-Robots-Tag`의 `noindex`를 남겨두는 불일치가 없도록 한다.
+
+완료 기준:
+
+1. AWS demo의 공개 목적이 문서에 기록된다.
+2. 비공개 demo이면 noindex 정책이 계속 적용된다.
+3. 공개 demo이면 robots, meta tag, response header가 서로 모순되지 않는다.
+4. 실제 배포 응답을 확인해 선택한 정책이 반영됐는지 검증한다.
+
+---
+
+Turn 1부터 Turn 7까지는 Redis 없는 기본 LMS 흐름을 먼저 완성한다.
+
+그 다음 Turn 8부터 Redis를 붙인다.
 
 이 순서를 따르면 문제가 생겼을 때 API/DB 문제인지 Redis 문제인지 분리해서 확인하기 쉽다.
 
-실제 backend 저장 동영상 제공은 Turn 15 이후에 붙인다.
+실제 backend 저장 동영상 제공은 Turn 16에서 붙인다.
 
 즉, 현재 단계 판단은 다음과 같다.
 
@@ -1462,12 +1581,13 @@ Turn 1부터 Turn 6까지는 Redis 없는 기본 LMS 흐름을 먼저 완성한�
 
 AWS 배포는 항상 수동으로만 수행한다.
 
-이 프로젝트에서는 원격 배포 파일을 초반에 만들지 않는다.
+이 프로젝트의 AWS demo는 모든 LMS 기능이 완성된 뒤에만 배포하는 환경이 아니다.
+Turn 3에서 Spring Boot 기반 production-like runtime과 최소 수동 배포 경로를 만들고,
+이후 Turn에서 완성되는 기능을 같은 배포 구조로 반복 검증한다.
 
-초반에 배포 파일을 먼저 만들면 아직 확정되지 않은 구조를 기준으로
-임시 Dockerfile, 임시 reverse proxy, 임시 port 정책이 생기기 쉽다.
-따라서 `.fordeploy/`의 실제 shell script는 Spring Boot 기반 runtime이
-확정된 뒤 작성한다.
+Turn 3에서는 임시 reverse proxy나 별도 Nginx를 추가하지 않는다.
+ALB와 Spring Boot 중심의 최종 방향을 유지하면서,
+아직 구현되지 않은 LMS 기능은 이후 application image 교체로 추가한다.
 
 ## 27.1 기본 원칙
 
@@ -1479,27 +1599,64 @@ AWS 배포는 항상 수동으로만 수행한다.
 - MySQL과 Redis는 application container와 lifecycle을 분리한다.
 - application redeploy는 DB/Redis volume을 삭제하거나 재생성하지 않는다.
 
-## 27.2 .fordeploy 작성 시점
+## 27.2 Clean Clone Build Source
 
-`.fordeploy/` 아래의 실제 배포 shell script는 Turn 14 직전 또는
-Turn 14 이후에 작성한다.
+AWS demo Docker image는 현재 작업 repository에서 직접 build하지 않는다.
+다음 고정 경로를 배포 전용 clean clone으로 사용한다.
 
-권장 위치:
+```text
+build root:   /home/hchjeong/deploy-remote-repo
+build source: /home/hchjeong/deploy-remote-repo/vueshines
+image root:   /home/hchjeong/deploy-remote-repo/images/vueshines
+remote:       git@github.com:HCHJEONG/vueshines.git
+```
 
-Turn 14 — README와 마무리 검증
+배포할 때마다 기존 `/home/hchjeong/deploy-remote-repo/vueshines`를 재사용하지 않고
+그 directory 전체를 완전히 삭제한 뒤 같은 경로에 remote repository를 fresh clone한다.
+따라서 이전 build output, untracked file, local modification은 다음 build에 포함되지 않는다.
 
-또는 별도 후속 단계:
+삭제 전 배포 script는 다음 조건을 모두 검증한다.
 
-Turn 14.5 — Manual AWS Demo Deployment Preparation
+1. build root의 resolved absolute path가 정확히 `/home/hchjeong/deploy-remote-repo`이다.
+2. 삭제 대상의 resolved parent path가 build root와 정확히 같다.
+3. 삭제 대상 basename이 정확히 `vueshines`이다.
+4. 삭제 대상이 빈 문자열, `/`, `/home/hchjeong`, build root 자체 또는 `images` directory가 아니다.
+5. 삭제할 absolute path를 출력하고 terminal에서 `y/N` 확인을 받는다.
+
+검증이나 확인이 실패하면 배포를 중단한다.
+검증된 고정 clone directory만 삭제하며 build root의 다른 repository와
+`/home/hchjeong/deploy-remote-repo/images`는 삭제하거나 초기화하지 않는다.
+
+fresh clone 후에는 다음을 확인한다.
+
+1. origin URL이 `git@github.com:HCHJEONG/vueshines.git`이다.
+2. operator가 선택한 remote branch 또는 commit을 checkout한다.
+3. `git status --porcelain` 결과가 비어 있다.
+4. build에 사용할 commit SHA를 log와 image tag에 기록한다.
+5. 선택한 commit이 remote에 존재하지 않으면 배포를 중단한다.
+
+Docker build context는 이 clean clone만 사용한다.
+현재 작업 repository의 uncommitted change는 image에 포함하지 않는다.
+실제 환경변수 파일의 source는 clean clone이 아니라
+현재 작업 repository의 `.fordeploy/aws-backup/.env` absolute path를 계속 사용한다.
+
+image tar는 clean clone 내부가 아니라 image root 아래에 임시로 생성하고,
+AWS에서 image load가 성공하면 local과 remote tar를 삭제한다.
+
+## 27.3 .fordeploy 작성 시점
+
+`.fordeploy/` 아래의 최소 배포 shell script와 runbook은 Turn 3에서 작성한다.
+Turn 3 이후에는 기능이 완성될 때마다 같은 script를 사용해 application image만 교체한다.
 
 작성 대상 예:
 
 1. .fordeploy/README.md
 2. .fordeploy/deploy-aws-demo.sh
 3. .fordeploy/configure-aws-demo-alb.sh
-4. 필요한 경우 .fordeploy/bootstrap-aws-demo-runtime.sh
+4. repository root의 .env.example
+5. .fordeploy/aws-backup/runtime-layout.md
 
-이 파일들은 다음이 확정된 뒤 작성한다.
+Turn 3에서 다음 항목을 먼저 확정한다.
 
 1. Spring Boot Dockerfile
 2. Vue dist를 Spring Boot image에 포함하는 방식
@@ -1509,37 +1666,41 @@ Turn 14.5 — Manual AWS Demo Deployment Preparation
 6. Redis connection environment
 7. application container port
 8. MySQL/Redis container 또는 외부 runtime 전략
-9. seed/migration 방식
+9. 초기 schema가 없어도 기동 가능한 datasource 설정
 10. persistent volume 이름
+11. target host의 env file absolute path
+12. deploy script 내부의 env 검증, 전송, 권한 설정, container 교체 순서
 
-## 27.3 .fordeploy/aws-backup 작성 시점
+seed와 migration 방식은 DB model을 구현하는 Turn 4에서 추가하고,
+기존 배포 script가 이를 전달할 수 있도록 확장한다.
 
-`.fordeploy/aws-backup/` 폴더는 미리 만들어둘 수 있다.
+## 27.4 .fordeploy/aws-backup 작성 시점
 
-하지만 그 안에 실제 환경변수 파일과 runtime file 템플릿은
-Turn 12 이후에 작성한다.
-
-권장 위치:
-
-Turn 12 — Redis to MySQL Flush 완료 후
-
-또는:
-
-Turn 13 — Failure Experiment 진행 중
+`.fordeploy/aws-backup/` 폴더는 Turn 3에서 배포 script의 입력 위치로 확정한다.
+실제 환경변수 파일 이름은 `.fordeploy/aws-backup/.env`로 고정하며,
+이 파일은 repository가 생성하지 않고 operator가 완전 수동으로 작성한다.
+Turn 13의 Redis to MySQL Flush와 Turn 14의 Failure Experiment에서
+추가 변수가 필요해지면 repository root의 `.env.example`과 runbook을 갱신하고,
+operator가 실제 `.fordeploy/aws-backup/.env`에 값을 수동으로 반영한다.
 
 작성 대상 예:
 
-1. .fordeploy/aws-backup/.env.example
-2. .fordeploy/aws-backup/env-file.example
+1. repository root의 `.env.example`
+2. .fordeploy/aws-backup/.env
 3. .fordeploy/aws-backup/runtime-layout.md
 
-실제 secret 값은 repository에 commit하지 않는다.
+`.fordeploy/aws-backup/.env`의 실제 secret 값은 repository에 commit하지 않는다.
+이 파일은 Docker build context와 final image에서도 제외한다.
+배포 script는 이 파일이 없으면 즉시 중단하고,
+있으면 local absolute path를 사용해 `/home/ubuntu/vueshines/.env`로 전송한다.
+전송 후 기본 owner `ubuntu:ubuntu`와 mode `600`을 설정한 뒤 container 실행 시 읽는다.
+runtime directory `/home/ubuntu/vueshines`는 기본 owner `ubuntu:ubuntu`, mode `700`으로 준비한다.
 
 로컬 DB dump나 로컬 DB 파일을 AWS로 전송하는 전략은 사용하지 않는다.
 AWS database state는 migration, seed data, 또는 AWS host 내부의
 database administration 절차로 관리한다.
 
-## 27.4 최종 AWS demo 형태
+## 27.5 최종 AWS demo 형태
 
 최종적으로 목표하는 AWS demo runtime은 다음과 같다.
 
