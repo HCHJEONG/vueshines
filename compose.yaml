@@ -11,6 +11,30 @@ services:
       - .:/app
       - frontend-node-modules:/app/node_modules
 
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/vueshines
+      SPRING_DATASOURCE_USERNAME: vueshines
+      SPRING_DATASOURCE_PASSWORD: vueshines
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://localhost:8080/api/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 15s
+
   mysql:
     image: mysql:8.4.6
     ports:
