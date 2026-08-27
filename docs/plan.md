@@ -330,21 +330,145 @@ Backend:
 
 - Kotlin
 - Spring Boot
-- Spring Web
+- Spring Web MVC
 - Spring Data JPA
 - MySQL Driver
 - Spring Data Redis
 - Validation
 
-가능하면 현재 안정 버전을 사용한다.
+Spring Boot project 생성 권장값:
 
-Java version은 현재 로컬 환경과 호환되는 LTS를 사용한다.
+- JVM/JDK distribution: Eclipse Temurin 21
+- Java version: 21
+- Build tool: Gradle - Kotlin DSL
+- Packaging: Jar
+- Language: Kotlin
+- Web stack: Spring MVC
+- Kotlin plugins: `jvm`, `plugin.spring`, `plugin.jpa`
+- Kotlin compiler option: `-Xjsr305=strict`
+
+Spring Initializr dependency 선택:
+
+- Spring Web
+- Spring Data JPA
+- MySQL Driver
+- Spring Data Redis
+- Validation
+- Actuator
+
+Actuator는 `/api/health` 또는 container health check 구성을 쉽게 하기 위해 사용한다.
+Spring Boot Docker Compose Support는 선택 사항이다.
+이 repository는 직접 `compose.yaml`을 관리하므로 처음에는 필수로 넣지 않는다.
+
+가능하면 현재 안정 버전을 사용한다.
+Java version은 21 LTS를 기본값으로 사용하고,
+로컬 환경 제약이 있으면 Java 17 LTS까지 허용한다.
 
 불필요한 dependency를 추가하지 않는다.
 
 ---
 
-# 7. Backend Package Structure
+# 7. JPA / Hibernate 채택 이유와 DB Migration 대비
+
+이 프로젝트의 기본 영속성 기술은 Spring Data JPA와 Hibernate로 한다.
+
+JPA는 Java/Kotlin 객체와 관계형 DB table을 연결하기 위한 표준이고,
+Hibernate는 Spring Boot에서 일반적으로 사용되는 JPA 구현체이다.
+Spring Data JPA는 그 위에서 repository 작성을 단순하게 해준다.
+
+이 프로젝트에서 JPA / Hibernate를 채택하는 이유:
+
+1. User, Course, Lecture, Enrollment, Progress는 전형적인 관계형 domain이다.
+2. Course-Lecture, User-Enrollment, User-Progress 관계를 entity와 repository로 표현하기 쉽다.
+3. 기본 CRUD와 단순 조회가 많아 직접 JDBC SQL을 반복 작성할 이유가 크지 않다.
+4. 수강신청, progress flush, 완료 판정 저장은 service 단위 transaction과 잘 맞는다.
+5. MySQL에서 PostgreSQL로 바뀔 가능성이 생겨도 기본 CRUD와 JPQL 기반 조회는 Hibernate dialect가 상당 부분 흡수할 수 있다.
+
+JPA가 SQL 학습을 대체한다는 뜻은 아니다.
+JPA도 결국 내부에서는 JDBC를 통해 SQL을 실행한다.
+따라서 table constraint, 실행 query, transaction 경계, lazy loading으로 인한 추가 query는 계속 확인한다.
+
+## 7.1 JDBC의 위치
+
+JDBC는 Java/Kotlin에서 DB에 직접 SQL을 보내는 가장 기본적인 기술이다.
+
+JPA / Hibernate / Spring Data JPA는 개발자가 JDBC 반복 코드를 덜 작성하도록 도와주지만,
+최종적으로 DB와 통신할 때는 JDBC driver를 사용한다.
+
+이 프로젝트에서는 기본 데이터 접근은 JPA로 구현한다.
+다만 다음 경우에는 제한적으로 JDBC 또는 native query를 검토할 수 있다.
+
+1. MySQL과 PostgreSQL의 upsert 문법 차이를 직접 제어해야 할 때
+2. JPA query로 표현하기 어려운 집계 query가 생겼을 때
+3. 실행 SQL을 명확히 고정해야 하는 성능 실험이 필요할 때
+
+초기 구현에서는 JDBC를 먼저 도입하지 않는다.
+
+## 7.2 MySQL에서 PostgreSQL Migration을 염두에 둔 원칙
+
+현재 기본 DB는 MySQL이다.
+
+향후 PostgreSQL로 바뀔 가능성을 완전히 배제하지 않기 위해 다음 원칙을 지킨다.
+
+1. domain service가 `JpaRepository`에 직접 깊게 의존하지 않도록 한다.
+2. MySQL 전용 `columnDefinition`을 entity에 남발하지 않는다.
+3. native SQL은 가능하면 피하고, 필요한 경우 adapter 내부에 격리한다.
+4. upsert처럼 DB별 문법이 다른 기능은 service에 흩뿌리지 않는다.
+5. ID 생성 전략은 MySQL auto increment에만 강하게 묶이지 않도록 주의한다.
+6. migration script를 추가할 때는 MySQL 전용 문법 여부를 명시한다.
+
+MySQL에서 PostgreSQL로 바꿀 때 주로 확인할 항목:
+
+1. JDBC driver dependency
+2. datasource URL
+3. Hibernate dialect 또는 Spring Boot 자동 dialect 판단
+4. schema migration script
+5. ID generation strategy
+6. boolean, datetime, text column type
+7. native query와 upsert 문법
+8. test container 또는 local compose DB image
+
+## 7.3 Adapter Layer 전략
+
+과도한 architecture를 만들지 않는다.
+
+하지만 DB 변경 가능성이 있거나 저장 정책이 중요한 domain에는
+얇은 port / adapter 경계를 둔다.
+
+권장 예:
+
+progress/
+├── ProgressService.kt
+├── ProgressStore.kt
+├── JpaProgressStore.kt
+├── ProgressJpaRepository.kt
+└── Progress.kt
+
+역할:
+
+- `ProgressService`: progress business rule을 처리한다.
+- `ProgressStore`: service가 의존하는 영속성 port이다.
+- `JpaProgressStore`: JPA repository를 사용하는 adapter이다.
+- `ProgressJpaRepository`: Spring Data JPA repository이다.
+- `Progress`: JPA entity이다.
+
+우선 adapter 경계를 둘 후보:
+
+1. ProgressStore
+2. CourseStore
+3. EnrollmentStore
+
+Progress는 Redis buffer, MySQL flush, MAX(current, incoming), completed 판정이 얽혀 있으므로
+가장 먼저 adapter 경계를 둘 가치가 있다.
+
+Course는 Redis cache와 DB 조회 경계가 있으므로 다음 후보이다.
+Enrollment는 unique constraint와 중복 수강신청 처리가 있으므로 필요하면 adapter 경계를 둔다.
+
+User와 Lecture처럼 단순 조회 중심인 domain은 처음부터 과하게 추상화하지 않는다.
+
+---
+
+# 8. Backend Package Structure
 
 예:
 
@@ -374,7 +498,7 @@ Domain별 package 구조를 우선한다.
 
 ---
 
-# 8. API
+# 9. API
 
 최소 API만 구현한다.
 
@@ -433,7 +557,7 @@ GET /api/lectures/{lectureId}/progress?userId=1
 
 ---
 
-# 9. Redis — Course Cache
+# 10. Redis — Course Cache
 
 Redis를 사용하는 첫 번째 이유는 Course 조회 cache이다.
 
@@ -481,7 +605,7 @@ CACHE HIT
 
 ---
 
-# 10. Video Playback Simulator
+# 11. Video Playback Simulator
 
 실제 video streaming은 구현하지 않는다.
 
@@ -541,7 +665,7 @@ Vue lecture screen
 
 ---
 
-# 11. Progress Event
+# 12. Progress Event
 
 Video simulator는 일정 간격으로 backend에 progress를 전송한다.
 
@@ -560,7 +684,7 @@ PUT /api/lectures/{lectureId}/progress
 
 ---
 
-# 12. Redis — Progress Buffer
+# 13. Redis — Progress Buffer
 
 Video progress는 빈번하게 변경될 수 있다.
 
@@ -594,7 +718,7 @@ frontend에 성공 응답을 반환할 수 있다.
 
 ---
 
-# 13. Progress Persistence
+# 14. Progress Persistence
 
 Redis progress를 MySQL에 영속화하는 간단한 전략을 구현한다.
 
@@ -640,7 +764,7 @@ Redis는 임시 저장소이므로 Redis 값만 믿고 장기 상태를 판단�
 
 ---
 
-# 14. 중요한 장애 시나리오
+# 15. 중요한 장애 시나리오
 
 이 프로젝트의 학습 목적상 다음을 생각하고 README에 기록한다.
 
@@ -682,7 +806,7 @@ MAX(current, incoming)
 
 ---
 
-# 15. Completed Rule
+# 16. Completed Rule
 
 Lecture completion rule을 하나 정의한다.
 
@@ -700,7 +824,7 @@ Frontend는 backend가 반환한 completed 값을 표시한다.
 
 ---
 
-# 16. Frontend Structure
+# 17. Frontend Structure
 
 예:
 
@@ -732,7 +856,7 @@ src/
 
 ---
 
-# 17. Vue State Rules
+# 18. Vue State Rules
 
 모든 상태를 Pinia에 넣지 않는다.
 
@@ -769,7 +893,7 @@ progress
 
 ---
 
-# 18. Vue Router
+# 19. Vue Router
 
 최소 route:
 
@@ -787,7 +911,7 @@ progress
 
 ---
 
-# 19. API Client
+# 20. API Client
 
 API 호출을 component 안에 무분별하게 작성하지 않는다.
 
@@ -809,7 +933,7 @@ Axios가 반드시 필요한 것은 아니다.
 
 ---
 
-# 20. CORS
+# 21. CORS
 
 개발환경:
 
@@ -831,7 +955,7 @@ production wildcard CORS는 사용하지 않는다.
 
 ---
 
-# 21. Docker Compose
+# 22. Docker Compose
 
 compose.yaml에는 다음 네 service를 둔다.
 
@@ -910,7 +1034,7 @@ AWS demo 배포 스크립트는 이 단계에서 만들지 않는다.
 
 ---
 
-# 22. Seed Data
+# 23. Seed Data
 
 개발 편의를 위해 최소 seed data를 만든다.
 
@@ -943,7 +1067,7 @@ duration 1200 seconds
 
 ---
 
-# 23. UI
+# 24. UI
 
 디자인 작업에 시간을 과도하게 사용하지 않는다.
 
@@ -970,7 +1094,7 @@ Video Playback Simulator
 
 ---
 
-# 24. Logging
+# 25. Logging
 
 Backend에서는 최소한 다음 로그를 확인할 수 있어야 한다.
 
@@ -990,228 +1114,36 @@ ENROLLMENT CREATED
 
 ---
 
-# 25. Implementation Order
-
-반드시 아래 순서로 구현한다.
-
-## Phase 1 — Infrastructure
-
-1. compose.yaml
-2. Dockerfile.frontend
-3. backend/Dockerfile
-4. MySQL 실행
-5. Redis 실행
-6. backend container 실행
-7. frontend container 실행
-8. service 간 connection 확인
-
-완료 조건:
-
-Docker Compose로 frontend / backend / MySQL / Redis가 정상 실행된다.
-
-다음 endpoint와 port가 host에서 확인된다.
-
-- Vue: http://localhost:5173
-- Spring Boot: http://localhost:8080/api/health
-- MySQL: localhost:3306
-- Redis: localhost:6379
-
----
-
-## Phase 2 — Spring Boot Skeleton
-
-1. backend 프로젝트 생성
-2. Kotlin
-3. Spring Web
-4. JPA
-5. MySQL 연결
-6. Redis 연결
-7. Compose 환경변수로 connection 설정
-
-완료 조건:
-
-GET /api/health
-
-응답:
-
-{
-  "status": "ok"
-}
-
----
-
-## Phase 3 — Course
-
-1. Course entity
-2. repository
-3. service
-4. controller
-5. seed data
-
-완료 조건:
-
-GET /api/courses
-
-가 MySQL 데이터를 JSON으로 반환한다.
-
----
-
-## Phase 4 — Vue Course UI
-
-1. CourseListView
-2. CourseCard
-3. API 호출
-4. 화면 표시
-
-완료 조건:
-
-Browser
-→ Vue
-→ Spring
-→ MySQL
-→ Spring
-→ Vue
-
-전체 흐름이 동작한다.
-
-이 시점에서 반드시 첫 milestone commit을 만든다.
-
----
-
-## Phase 5 — Redis Course Cache
-
-Course 조회에 Redis cache를 추가한다.
-
-완료 조건:
-
-첫 요청:
-
-CACHE MISS
-
-두 번째 요청:
-
-CACHE HIT
-
-로그에서 확인된다.
-
----
-
-## Phase 6 — Enrollment
-
-수강신청 구현.
-
-완료 조건:
-
-Vue에서 수강신청 클릭
-→ POST API
-→ MySQL enrollment 저장
-→ UI 반영
-
----
-
-## Phase 7 — Video Simulator
-
-VideoPlaybackSimulator.vue 구현.
-
-완료 조건:
-
-Play
-Pause
-Reset
-
-이 동작하고 currentSeconds가 증가한다.
-
----
-
-## Phase 8 — Progress Redis
-
-Video simulator가 일정 간격으로 progress event를 전송한다.
-
-완료 조건:
-
-Vue
-→ Spring
-→ Redis
-
-progress key가 Redis에 생성된다.
-
----
-
-## Phase 9 — MySQL Progress Persistence
-
-Scheduled flush 구현.
-
-완료 조건:
-
-Redis progress
-→ Spring scheduled job
-→ MySQL progress
-
-흐름을 확인한다.
-
----
-
-## Phase 10 — Failure Experiment
-
-최소 다음 실험을 수행하고 README에 기록한다.
-
-Redis 장애:
-
-1. Redis container stop
-2. progress 전송
-3. 결과 관찰
-
-Spring Boot 재시작:
-
-1. Spring stop
-2. restart
-3. Redis state 확인
-
-MySQL 장애:
-
-1. MySQL stop
-2. Redis에는 progress가 들어오는지 확인
-3. MySQL 복구
-4. flush 가능한지 확인
-
----
-
-## Phase 11 — Backend Stored Video Extension
-
-이 단계는 1차 LMS 흐름의 필수 구현 범위가 아니다.
-
-실제 backend 저장 동영상을 사용자에게 제공하는 기능은
-다음 조건을 먼저 만족한 뒤 진행한다.
-
-1. Course, Lecture, Enrollment, Progress 기본 API가 동작한다.
-2. Video simulator 기반 progress event가 Redis에 저장된다.
-3. Redis progress가 MySQL로 flush된다.
-4. 장애 실험을 통해 Redis와 MySQL의 역할 차이를 확인했다.
-
-그 다음에 다음 항목을 작은 확장 단계로 구현한다.
-
-1. backend가 관리하는 동영상 파일 저장 위치 결정
-2. Lecture video metadata 추가
-3. GET /api/lectures/{lectureId}/video 구현
-4. HTTP range request 지원 여부 판단
-5. Vue simulator를 실제 video element로 교체
-6. video timeupdate 이벤트를 기존 progress API에 연결
-
-판단:
-
-Turn 1부터 Turn 14까지는 실제 동영상 파일 제공을 넣지 않는다.
-실제 동영상 제공은 Turn 15 이후의 확장 작업으로 둔다.
-이 순서를 지키면 video serving 문제와 progress persistence 문제를 분리해서 확인할 수 있다.
-
----
-
 # 26. Turn-Based Execution Plan
 
 실제 구현은 한 턴에 하나의 작동 가능한 단위를 끝내는 방식으로 진행한다.
+이 문서의 구현 순서는 Phase 목록을 별도로 두지 않고,
+아래 Turn 목록을 기준으로 관리한다.
 
 너무 큰 단위로 묶으면 디버깅 범위가 흐려지고,
 너무 작은 단위로 쪼개면 전체 흐름이 끊기므로
 아래 턴 단위를 기본 작업 단위로 사용한다.
+
+## Frontend Framework 교체 가능성 원칙
+
+백엔드 API와 business rule은 frontend framework에 독립적으로 설계한다.
+Vue는 교체 가능한 SPA client로 취급하며 다음 원칙을 지킨다.
+
+1. progress 계산, 완료 판정, 수강 신청, 중복 처리 규칙은 Spring Boot가 담당한다.
+2. API request와 response는 Vue, Pinia, Vue Router에 의존하지 않는 JSON contract로 정의한다.
+3. frontend는 Redis key나 MySQL table 구조를 직접 알지 않는다.
+4. API base URL과 허용 origin은 환경별 설정으로 분리한다.
+5. video URL과 storage path를 frontend에서 임의로 조합하지 않는다.
+
+Vue를 React SPA로 교체하는 경우에는 현재 REST API와 정적 파일 배포 구조를
+대체로 유지할 수 있다. Vue Router와 Pinia 등의 client 구현만 React 생태계의
+도구로 교체한다.
+
+Next.js의 static export 범위로 교체할 때도 정적 파일 배포 구조를 사용할 수 있지만,
+SSR 또는 server component runtime이 필요한 Next.js로 교체할 때는 별도의 Node.js
+runtime container가 필요하다. 이 경우 Spring Boot가 frontend 정적 파일까지 제공하는
+AWS demo 전략을 그대로 적용하지 않고, ALB에서 `/api/*`는 Spring Boot로,
+frontend 요청은 Next.js로 전달하는 배포 구조와 server-side API base URL을 재검토한다.
 
 ## Turn 1 — Docker 기반 뼈대
 
@@ -1219,18 +1151,19 @@ Turn 1부터 Turn 14까지는 실제 동영상 파일 제공을 넣지 않는다
 
 1. compose.yaml
 2. Dockerfile.frontend
-3. backend/Dockerfile
+3. MySQL service
+4. Redis service
+5. frontend service
 
 완료 기준:
 
-docker compose up으로 다음 네 container가 실행된다.
+docker compose up으로 다음 container가 실행된다.
 
 - frontend
-- backend
 - mysql
 - redis
 
-Spring 기능은 최소 health check 수준이면 충분하다.
+Spring Boot backend는 아직 만들지 않는다.
 
 ---
 
@@ -1241,8 +1174,10 @@ backend/에 Kotlin Spring Boot 프로젝트를 만든다.
 구현 항목:
 
 1. GET /api/health
-2. Compose 환경변수 기반 MySQL 연결 설정
-3. Compose 환경변수 기반 Redis 연결 설정
+2. backend/Dockerfile
+3. backend service
+4. Compose 환경변수 기반 MySQL 연결 설정
+5. Compose 환경변수 기반 Redis 연결 설정
 
 완료 기준:
 
@@ -1253,6 +1188,8 @@ http://localhost:8080/api/health
 {
   "status": "ok"
 }
+
+docker compose up으로 frontend / backend / MySQL / Redis 네 container가 함께 실행된다.
 
 ---
 

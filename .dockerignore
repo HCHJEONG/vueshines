@@ -1,0 +1,13 @@
+.git
+.idea
+.vscode
+.fordeploy
+node_modules
+dist
+coverage
+*.log
+*.env
+.env
+.env.*
+Dockerfile*
+compose*.yaml
