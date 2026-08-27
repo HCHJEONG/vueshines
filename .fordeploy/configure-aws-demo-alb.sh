@@ -57,6 +57,25 @@ if [ -z "$TARGET_GROUP_ARN" ] || [ "$TARGET_GROUP_ARN" = None ]; then
     --output text)"
 fi
 
+aws elbv2 modify-target-group \
+  --target-group-arn "$TARGET_GROUP_ARN" \
+  --health-check-protocol HTTP \
+  --health-check-port traffic-port \
+  --health-check-path "$HEALTH_PATH" \
+  --matcher HttpCode=200 >/dev/null
+
+STALE_TARGETS="$(aws elbv2 describe-target-health \
+  --target-group-arn "$TARGET_GROUP_ARN" \
+  --query "TargetHealthDescriptions[?Target.Id!='$INSTANCE_ID' || Target.Port!=\`$TARGET_PORT\`].Target.[Id,Port]" \
+  --output text)"
+if [ -n "$STALE_TARGETS" ]; then
+  while read -r stale_id stale_port; do
+    aws elbv2 deregister-targets \
+      --target-group-arn "$TARGET_GROUP_ARN" \
+      --targets "Id=$stale_id,Port=$stale_port"
+  done <<< "$STALE_TARGETS"
+fi
+
 aws elbv2 register-targets --target-group-arn "$TARGET_GROUP_ARN" --targets "Id=$INSTANCE_ID,Port=$TARGET_PORT"
 
 EXISTING_RULE="$(aws elbv2 describe-rules --listener-arn "$LISTENER_ARN" --query "Rules[?Conditions[?Field=='host-header' && contains(Values, '$HOST_NAME')]].RuleArn | [0]" --output text)"
