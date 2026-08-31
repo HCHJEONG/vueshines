@@ -1,13 +1,25 @@
 FROM node:24.12.0-alpine
 
+ARG UID=1000
+ARG GID=1000
+
 WORKDIR /app
 
 RUN corepack enable
 
-COPY package.json pnpm-lock.yaml ./
+RUN deluser node 2>/dev/null || true; \
+	delgroup node 2>/dev/null || true; \
+	addgroup -g "${GID}" appgroup; \
+	adduser -D -u "${UID}" -G appgroup appuser; \
+	chown appuser:appgroup /app
+
+COPY --chown=appuser:appgroup package.json pnpm-lock.yaml ./
+
+USER appuser
+
 RUN pnpm install --frozen-lockfile
 
-COPY . .
+COPY --chown=appuser:appgroup . .
 
 EXPOSE 5173
 
