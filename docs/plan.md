@@ -1113,13 +1113,24 @@ ENROLLMENT CREATED
 ## Frontend Framework 교체 가능성 원칙
 
 백엔드 API와 business rule은 frontend framework에 독립적으로 설계한다.
-Vue는 교체 가능한 SPA client로 취급하며 다음 원칙을 지킨다.
+Vue는 교체 가능한 SPA client로 취급하며, 향후 React SPA 또는 Next.js로 바꾸더라도
+핵심 LMS 흐름이 다시 설계되지 않도록 한다.
+
+현재 검토 결과, 아직 구현된 frontend는 Vue 기본 scaffold 수준이고 backend에는
+`/api/health`와 SPA fallback만 있으므로 Vue/Pinia/Vue Router에 과하게 묶인
+application contract는 없다. 지금 단계에서는 프론트엔드 교체를 크게 어렵게 만드는
+설계가 발견되지 않았다.
+
+앞으로 다음 원칙을 지킨다.
 
 1. progress 계산, 완료 판정, 수강 신청, 중복 처리 규칙은 Spring Boot가 담당한다.
 2. API request와 response는 Vue, Pinia, Vue Router에 의존하지 않는 JSON contract로 정의한다.
 3. frontend는 Redis key나 MySQL table 구조를 직접 알지 않는다.
 4. API base URL과 허용 origin은 환경별 설정으로 분리한다.
 5. video URL과 storage path를 frontend에서 임의로 조합하지 않는다.
+6. frontend state 이름이나 Pinia store 구조를 API DTO 이름으로 강제하지 않는다.
+7. route path는 사용자 화면 계약으로만 다루고 backend domain model과 1:1로 강제 결합하지 않는다.
+8. shared TypeScript type을 만들더라도 Vue component type과 API DTO type을 분리한다.
 
 Vue를 React SPA로 교체하는 경우에는 현재 REST API와 정적 파일 배포 구조를
 대체로 유지할 수 있다. Vue Router와 Pinia 등의 client 구현만 React 생태계의

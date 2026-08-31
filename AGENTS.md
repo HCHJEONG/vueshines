@@ -19,6 +19,9 @@ learning flow described in `docs/plan.md`.
   patterns before adding new dependencies.
 - Keep frontend state rules clear: local UI state in components, shared state
   in Pinia, persistence and business rules in the backend.
+- Treat Vue as a replaceable SPA client. Keep API contracts, video endpoints,
+  progress rules, Redis keys, and MySQL schema independent from Vue, Pinia, and
+  Vue Router so a later React or Next.js frontend can reuse the backend design.
 
 ## Implementation Order
 
