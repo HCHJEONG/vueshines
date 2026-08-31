@@ -29,10 +29,11 @@ Vue 3
 - Redis
 - Docker Compose
 
-동영상 스트리밍 자체는 구현하지 않는다.
+별도 동영상 스트리밍 서버는 구현하지 않는다.
 
-실제 동영상 플레이어 대신
-`Video Playback Simulator`를 만들어 재생 시간과 진도 이벤트를 발생시킨다.
+대신 향후 빌드와 기능 검증에는 약 5분 전후의 실제 샘플 동영상을 사용한다.
+Spring Boot가 학습용 demo 수준에서 backend 저장 동영상 파일을 제공하고,
+Vue는 HTML video element로 재생 시간과 진도 이벤트를 발생시킨다.
 
 다만 이 앱이 나중에 실제 동영상 파일을 다루게 될 경우의 목표 구조는
 미리 분명히 해 둔다.
@@ -42,8 +43,7 @@ Vue 3
 - 시청 중 발생하는 progress event는 먼저 Redis에 저장한다.
 - Redis에 쌓인 progress는 적당한 시점에 MySQL progress table로 옮겨 영속화한다.
 
-현재 구현 단계에서는 실제 동영상 파일 제공 대신 simulator를 사용하되,
-진도 처리 구조는 실제 동영상 플레이어로 바꿔도 유지될 수 있게 설계한다.
+진도 처리 구조는 실제 샘플 동영상 재생 이벤트를 기준으로 설계한다.
 
 ---
 
@@ -536,7 +536,7 @@ GET /api/lectures/{lectureId}
 GET /api/lectures/{lectureId}/video
 
 이 API는 backend가 관리하는 동영상 파일을 사용자에게 제공한다.
-초기에는 simulator를 사용하므로 이 endpoint를 구현하지 않는다.
+향후 테스트에는 약 5분 전후의 실제 샘플 동영상을 사용한다.
 나중에 구현할 때는 HTTP range request, content type, 접근 권한,
 파일 경로 노출 방지를 함께 고려한다.
 
@@ -605,11 +605,12 @@ CACHE HIT
 
 ---
 
-# 11. Video Playback Simulator
+# 11. Sample Video Playback
 
-실제 video streaming은 구현하지 않는다.
+별도 video streaming server는 구현하지 않는다.
 
-Vue에서 VideoPlaybackSimulator.vue를 만든다.
+Vue에서는 HTML video element 기반 강의 재생 컴포넌트를 만든다.
+검증에는 약 5분 전후의 실제 샘플 동영상을 사용한다.
 
 UI 예:
 
@@ -620,7 +621,7 @@ Introduction to Mathematics
 
 Duration: 10:00
 
-[ Play ] [ Pause ] [ Reset ]
+[ Play ] [ Pause ]
 
 ████████████░░░░░░░░
 
@@ -628,30 +629,16 @@ Duration: 10:00
 
 --------------------------------
 
-실제 video element를 사용할 필요는 없다.
-
-JavaScript timer를 사용한다.
-
 상태:
 
 - currentSeconds
 - durationSeconds
 - playing
 
-Play 클릭:
+이 값들은 timer로 흉내 내지 않고 video element의 playback state와
+timeupdate event에서 얻는다.
 
-1초마다 currentSeconds 증가
-
-Pause:
-
-timer 중지
-
-Reset:
-
-0으로 초기화
-
-이 simulator는 최종 목표가 아니다.
-역할은 실제 동영상 플레이어 없이도 다음 흐름을 먼저 검증하는 것이다.
+역할은 실제 샘플 동영상을 통해 다음 흐름을 검증하는 것이다.
 
 Vue lecture screen
 → 재생 시간 변화
@@ -660,14 +647,13 @@ Vue lecture screen
 → Redis progress buffer
 → MySQL persistence
 
-실제 backend 저장 동영상을 제공하는 단계에서는 simulator를 HTML video element로 교체할 수 있다.
 이때도 progress event API와 Redis/MySQL 저장 전략은 그대로 유지한다.
 
 ---
 
 # 12. Progress Event
 
-Video simulator는 일정 간격으로 backend에 progress를 전송한다.
+Video playback component는 일정 간격으로 backend에 progress를 전송한다.
 
 예:
 
@@ -693,7 +679,7 @@ Redis를 임시 progress store로 사용한다.
 
 Flow:
 
-Video Simulator
+HTML video element
       │
       │ progress event
       ▼
@@ -833,7 +819,7 @@ src/
 ├── components/
 │   ├── CourseCard.vue
 │   ├── LectureList.vue
-│   └── VideoPlaybackSimulator.vue
+│   └── SampleVideoPlayer.vue
 │
 ├── views/
 │   ├── CourseListView.vue
@@ -1088,7 +1074,7 @@ duration 1200 seconds
 ## Lecture
 
 강의 제목
-Video Playback Simulator
+Sample Video Player
 현재 진도
 완료 여부
 
@@ -1413,23 +1399,26 @@ Vue에서 수강신청 클릭
 
 ---
 
-## Turn 10 — Video Playback Simulator
+## Turn 10 — Sample Video Player
 
-Vue에 VideoPlaybackSimulator.vue를 만든다.
+Vue에 SampleVideoPlayer.vue를 만든다.
+약 5분 전후의 실제 샘플 동영상을 fixture로 두고 HTML video element로 재생한다.
 
 구현 항목:
 
 1. Play
 2. Pause
-3. Reset
-4. progress bar
-5. 현재 시간 표시
+3. progress bar
+4. 현재 시간 표시
+5. duration 표시
+6. video element의 timeupdate event 처리
 
-이 단계에서는 backend API와 연결하지 않는다.
+이 단계에서는 progress backend API와 연결하지 않는다.
+동영상 source도 최종 backend endpoint가 아니라 빌드 검증용 샘플 fixture를 사용할 수 있다.
 
 완료 기준:
 
-브라우저에서 재생 시간이 정상 증가한다.
+브라우저에서 실제 샘플 동영상이 재생되고 재생 시간이 정상 증가한다.
 
 ---
 
@@ -1438,7 +1427,7 @@ Vue에 VideoPlaybackSimulator.vue를 만든다.
 구현 항목:
 
 1. PUT /api/lectures/{lectureId}/progress
-2. simulator의 주기적 progress event 전송
+2. 실제 샘플 video component의 주기적 progress event 전송
 3. Redis progress buffer 저장
 
 Progress key:
@@ -1509,7 +1498,7 @@ README에 다음을 정리한다.
 3. Redis를 쓰는 이유
 4. MySQL을 쓰는 이유
 5. Kafka를 쓰지 않는 이유
-6. simulated video를 쓰는 이유
+6. 약 5분 실제 샘플 동영상을 쓰는 이유
 7. failure observation
 
 완료 기준:
@@ -1518,17 +1507,17 @@ docker compose up부터 Vue 화면 동작까지 전체 흐름을 한 번 통과�
 
 ---
 
-## Turn 16 — Backend Stored Video 제공 확장
+## Turn 16 — Backend Stored Sample Video 제공
 
-이 턴은 기본 LMS 실습 완료 후 진행하는 선택 확장이다.
+이 턴은 실제 샘플 동영상으로 재생과 진도 이벤트를 검증하는 단계다.
 
 구현 항목:
 
-1. backend 내부 또는 runtime volume에 동영상 파일을 둘 위치를 정한다.
+1. backend 내부 또는 runtime volume에 약 5분 전후 샘플 동영상 파일을 둘 위치를 정한다.
 2. Lecture에 video metadata를 추가한다.
 3. GET /api/lectures/{lectureId}/video endpoint를 만든다.
 4. 필요한 경우 HTTP range request를 지원한다.
-5. Vue의 VideoPlaybackSimulator를 실제 video element 기반 컴포넌트로 교체한다.
+5. Vue에 실제 video element 기반 컴포넌트를 만든다.
 6. video playback event를 기존 PUT /api/lectures/{lectureId}/progress API에 연결한다.
 
 완료 기준:
@@ -1579,14 +1568,14 @@ Turn 1부터 Turn 7까지는 Redis 없는 기본 LMS 흐름을 먼저 완성한�
 
 이 순서를 따르면 문제가 생겼을 때 API/DB 문제인지 Redis 문제인지 분리해서 확인하기 쉽다.
 
-실제 backend 저장 동영상 제공은 Turn 16에서 붙인다.
+실제 backend 저장 샘플 동영상 제공은 Turn 16에서 붙인다.
 
 즉, 현재 단계 판단은 다음과 같다.
 
-1. 먼저 simulator로 progress pipeline을 완성한다.
+1. 먼저 실제 샘플 video component로 progress pipeline을 완성한다.
 2. Redis가 progress의 1차 저장소 역할을 하는지 확인한다.
 3. MySQL flush가 안정적으로 동작하는지 확인한다.
-4. 그 뒤 simulator를 실제 backend video 제공 방식으로 교체한다.
+4. 별도 streaming server 없이 Spring Boot의 backend video 제공 방식으로 검증한다.
 
 ---
 
@@ -1760,15 +1749,15 @@ Vue
 
 현재 규모와 문제에서는 필요하지 않음.
 
-## Why simulated video?
+## Why 5-minute sample video?
 
 목표는 streaming 기술이 아니라
-학습 진도 데이터의 frontend/backend 처리 흐름을 이해하는 것이기 때문.
+학습 진도 데이터의 frontend/backend 처리 흐름을 실제 브라우저 video event로 이해하는 것이기 때문.
 
-## Future Backend Stored Video
+## Backend Stored Sample Video
 
-기본 구현이 끝난 뒤에는 backend가 저장한 동영상을
-GET /api/lectures/{lectureId}/video 형태로 제공하는 확장을 고려한다.
+backend가 저장한 약 5분 전후의 샘플 동영상을
+GET /api/lectures/{lectureId}/video 형태로 제공한다.
 
 이때도 진도 저장 전략은 유지한다.
 
@@ -1794,7 +1783,7 @@ Redis/MySQL/Spring을 실제로 중지시켜 본 결과 기록.
 2. 강좌를 선택할 수 있다.
 3. 수강신청할 수 있다.
 4. 강의 목록을 볼 수 있다.
-5. simulated video를 재생할 수 있다.
+5. 약 5분 전후의 실제 샘플 동영상을 재생할 수 있다.
 6. 진도가 주기적으로 backend로 전달된다.
 7. 진도가 Redis에 저장된다.
 8. Redis의 진도가 scheduled job을 통해 MySQL에 반영된다.
@@ -1802,4 +1791,4 @@ Redis/MySQL/Spring을 실제로 중지시켜 본 결과 기록.
 10. Docker Compose로 frontend, backend, MySQL, Redis를 함께 실행할 수 있다.
 11. 주요 장애 실험 결과가 README에 기록되어 있다.
 12. Spring Boot 기반 AWS demo 수동 배포 전략이 문서화되어 있다.
-13. 실제 backend 저장 동영상 제공은 기본 완료 이후 확장 단계로 판단되어 문서화되어 있다.
+13. 실제 backend 저장 샘플 동영상 제공과 빌드 중 검증 전략이 문서화되어 있다.

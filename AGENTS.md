@@ -25,7 +25,8 @@ learning flow described in `docs/plan.md`.
 - Treat `docs/plan.md` as the source implementation plan.
 - Implement work in small, verifiable turns.
 - Complete the base LMS flow before adding Redis behavior:
-  course API, course UI, lecture routing, enrollment, simulator, progress.
+  course API, course UI, lecture routing, enrollment, sample video playback,
+  progress.
 - Add Redis only where it has a defined reason:
   course cache and progress buffering.
 - After each meaningful turn, verify the relevant endpoint or browser flow.
