@@ -1,85 +1,66 @@
 <script setup lang="ts">
 import { RouterLink, RouterView } from 'vue-router'
-import HelloWorld from './components/HelloWorld.vue'
 </script>
 
 <template>
-  <header>
-    <img alt="Vue logo" class="logo" src="@/assets/logo.svg" width="125" height="125" />
-
-    <div class="wrapper">
-      <HelloWorld msg="You did it!" />
-
+  <div class="app-shell">
+    <header class="app-header">
+      <RouterLink class="app-header__brand" to="/">Penvot Education</RouterLink>
       <nav>
-        <RouterLink to="/">Home</RouterLink>
-        <RouterLink to="/about">About</RouterLink>
+        <RouterLink to="/">강좌</RouterLink>
       </nav>
-    </div>
-  </header>
+    </header>
 
-  <RouterView />
+    <RouterView />
+  </div>
 </template>
 
 <style scoped>
-header {
-  line-height: 1.5;
-  max-height: 100vh;
+.app-shell {
+  min-height: 100vh;
 }
 
-.logo {
-  display: block;
-  margin: 0 auto 2rem;
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 34px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.app-header__brand {
+  color: #27313d;
+  font-size: 22px;
+  font-weight: 900;
+  text-decoration: none;
 }
 
 nav {
-  width: 100%;
-  font-size: 12px;
-  text-align: center;
-  margin-top: 2rem;
-}
-
-nav a.router-link-exact-active {
-  color: var(--color-text);
-}
-
-nav a.router-link-exact-active:hover {
-  background-color: transparent;
+  display: flex;
+  gap: 10px;
 }
 
 nav a {
-  display: inline-block;
-  padding: 0 1rem;
-  border-left: 1px solid var(--color-border);
+  min-height: 36px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  color: #4d5965;
+  font-weight: 700;
+  text-decoration: none;
 }
 
-nav a:first-of-type {
-  border: 0;
+nav a.router-link-exact-active {
+  background: #edf7f7;
+  color: #006f6f;
 }
 
-@media (min-width: 1024px) {
-  header {
-    display: flex;
-    place-items: center;
-    padding-right: calc(var(--section-gap) / 2);
-  }
-
-  .logo {
-    margin: 0 2rem 0 0;
-  }
-
-  header .wrapper {
-    display: flex;
-    place-items: flex-start;
-    flex-wrap: wrap;
-  }
-
-  nav {
-    text-align: left;
-    margin-left: -1rem;
-    font-size: 1rem;
-
-    padding: 1rem 0;
-    margin-top: 1rem;
+@media (max-width: 520px) {
+  .app-header {
+    align-items: flex-start;
+    flex-direction: column;
+    margin-bottom: 24px;
   }
 }
 </style>

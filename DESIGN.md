@@ -11,6 +11,31 @@ than a startup landing page or experimental dashboard.
 
 Do not use neo-brutalism for this project.
 
+## UI Framework Direction
+
+Use **PrimeVue + Tailwind CSS** as the preferred UI direction for future
+frontend implementation. This project should keep the existing Vue/Vite shape
+and avoid choices that make a later PrimeVue adoption awkward.
+
+Guidelines:
+
+- Prefer plain Vue components, scoped CSS, and Tailwind-compatible layout
+  decisions until PrimeVue is formally introduced.
+- Do not introduce Quasar, Vuetify, or another full application UI framework
+  without explicit approval.
+- Avoid framework-specific layout wrappers, theme assumptions, global resets,
+  component abstractions, or naming patterns that would fight PrimeVue later.
+- Use PrimeVue for common application controls when the dependency is added:
+  buttons, inputs, selects, dialogs, tabs, badges, messages, and similar UI.
+- Add TanStack Table only when the app reaches data-heavy screens that need
+  sorting, filtering, pagination, row selection, or column composition beyond
+  simple LMS lists. Do not add it for basic course or lecture lists.
+- Tailwind CSS should carry page layout, spacing, responsive behavior, and
+  small visual adjustments. PrimeVue should carry reusable interactive controls.
+- Keep the visual result aligned with the Calm Academic Portal direction; do
+  not accept a component library default theme if it makes the app feel generic
+  or overly constrained.
+
 ## Course Detail Pattern
 
 For course, service detail, and enrollment pages, use a **Structured Enrollment
