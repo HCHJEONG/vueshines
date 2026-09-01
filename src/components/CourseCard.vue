@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { RouterLink } from 'vue-router'
 import type { Course } from '@/types/course'
 
 defineProps<{
@@ -17,11 +18,13 @@ defineProps<{
     <p>{{ course.description }}</p>
 
     <div class="course-card__meta">
-      <span>강의 준비중</span>
+      <span>강의 확인 가능</span>
       <span>진도 0%</span>
     </div>
 
-    <button class="course-card__action" type="button">강좌 보기</button>
+    <RouterLink class="course-card__action" :to="{ name: 'course-detail', params: { courseId: course.id } }">
+      강좌 보기
+    </RouterLink>
   </article>
 </template>
 
@@ -82,13 +85,16 @@ p {
 }
 
 .course-card__action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 100%;
   min-height: 44px;
-  border: 0;
   border-radius: 6px;
   background: #008080;
   color: #ffffff;
   font-weight: 800;
+  text-decoration: none;
   cursor: pointer;
 }
 
