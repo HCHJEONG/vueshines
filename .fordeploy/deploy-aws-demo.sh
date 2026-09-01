@@ -117,7 +117,7 @@ LOCAL_IMAGE_FILE="${LOCAL_IMAGE_DIR}/${IMAGE_NAME}-${IMAGE_TAG}.tar"
 REMOTE_IMAGE_FILE="${REMOTE_IMAGE_DIR}/${IMAGE_NAME}-${IMAGE_TAG}.tar"
 
 step "build application image from commit $COMMIT_SHA"
-docker build --file "$CLEAN_CLONE_DIR/Dockerfile.aws-demo" \
+docker build --file "$CLEAN_CLONE_DIR/Dockerfile.aws-demo.full-stack" \
   --build-arg "VCS_REF=$COMMIT_SHA" --tag "$IMAGE" "$CLEAN_CLONE_DIR"
 
 step "save application image archive"

@@ -950,7 +950,7 @@ services:
   frontend:
     build:
       context: .
-      dockerfile: Dockerfile.frontend
+      dockerfile: Dockerfile.local.frontend
     ports:
       - "5173:5173"
     environment:
@@ -961,7 +961,7 @@ services:
   backend:
     build:
       context: ./backend
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.local.backend
     ports:
       - "8080:8080"
     environment:
@@ -1147,7 +1147,7 @@ frontend 요청은 Next.js로 전달하는 배포 구조와 server-side API base
 구현 항목:
 
 1. compose.yaml
-2. Dockerfile.frontend
+2. Dockerfile.local.frontend
 3. MySQL service
 4. Redis service
 5. frontend service
@@ -1171,7 +1171,7 @@ backend/에 Kotlin Spring Boot 프로젝트를 만든다.
 구현 항목:
 
 1. GET /api/health
-2. backend/Dockerfile
+2. backend/Dockerfile.local.backend
 3. backend service
 4. Compose 환경변수 기반 MySQL 연결 설정
 5. Compose 환경변수 기반 Redis 연결 설정
